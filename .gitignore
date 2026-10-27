@@ -22,10 +22,15 @@ htmlcov/
 backend/data/uploads/*
 !backend/data/uploads/.gitkeep
 backend/data/processed/
+backend/data/chroma/
+data/
+data/chroma/
 *.csv
+!backend/data/samples/*.csv
 *.xlsx
 *.xls
 *.pdf
+!backend/data/samples/*.pdf
 
 node_modules/
 frontend/node_modules/
@@ -42,3 +47,6 @@ Thumbs.db
 npm-debug.log*
 
 .ipynb_checkpoints/
+
+PROJECT_GUIDE
+docs
