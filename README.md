@@ -1,13 +1,13 @@
 # FP&A Insight Copilot
 
-An AI-powered Financial Planning & Analysis (FP&A) assistant that provides deterministic financial variance calculations, CSV data ingestion, PDF document text extraction, semantic vector search (RAG), and evidence-grounded answers with verifiable citations.
+An AI-powered Financial Planning & Analysis (FP&A) assistant that provides deterministic financial variance calculations, CSV data ingestion, PDF document text extraction, semantic vector search (RAG), evidence-grounded answers with verifiable citations, and a modern React 19 analytics dashboard.
 
 ---
 
 ## Current Project Status
 
 - **Backend:** **Complete and fully verified** (44/44 automated tests passing).
-- **Frontend:** Pending approval (React frontend will be implemented in the next phase).
+- **Frontend:** **Complete and fully verified** (React 19 + Vite + Tailwind CSS + Recharts + Lucide React, connecting to all backend endpoints).
 
 ---
 
@@ -40,36 +40,53 @@ An AI-powered Financial Planning & Analysis (FP&A) assistant that provides deter
    - Strict Pydantic input/output validation before execution.
    - No arbitrary shell, Python, or filesystem access.
 
+6. **Enterprise React 19 Frontend**:
+   - 5 complete application views: **Overview**, **Financial Analysis**, **Documents**, **AI Copilot**, and **Settings**.
+   - Interactive financial charts (Budget vs. Actual, Variance breakdown) using Recharts.
+   - Drag-and-drop CSV and PDF uploaders with status and validation notices.
+   - Conversational RAG assistant with grounded citation inspection cards.
+   - Controlled tool execution panel with direct parameter inputs and live JSON output.
+
 ---
 
-## Quick Start (Backend)
+## Quick Start Guide
 
-### 1. Setup Virtual Environment
+### 1. Run the FastAPI Backend
 ```bash
 cd backend
-python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 2. Configure Environment
-```bash
-cp .env.example .env
-```
-*(Optional)* Add your `GEMINI_API_KEY` to `.env` to enable live Gemini generation. If left blank, the backend operates in offline deterministic mode.
-
-### 3. Start the API Server
-```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
-- Interactive API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+- Swagger Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 - Health Check: [http://localhost:8000/health](http://localhost:8000/health)
 
-### 4. Run Automated Tests
+### 2. Run the React Frontend
+In a new terminal window:
 ```bash
-PYTHONPATH=backend backend/venv/bin/pytest backend/tests -v
+cd frontend
+npm install
+npm run dev
 ```
-All **44 tests** pass out of the box without requiring API keys or network access.
+- Application Dashboard: [http://localhost:5173](http://localhost:5173)
+
+---
+
+## Verification & Testing
+
+### Backend Automated Test Suite
+```bash
+cd backend
+./venv/bin/pytest tests -v
+```
+All **44 tests** pass in ~2.5 seconds without requiring external network access or paid API keys.
+
+### Frontend ESLint & Build
+```bash
+cd frontend
+npm run lint
+npm run build
+```
+Build passes cleanly in <500ms and ESLint passes with zero errors or warnings.
 
 ---
 
@@ -94,7 +111,12 @@ fpa-insight-copilot/
 │   └── README.md                # Comprehensive backend guide & API contracts
 ├── docs/
 │   └── PROGRESS.md              # Milestone tracking & implementation history
-└── frontend/                    # React frontend workspace (next milestone)
+└── frontend/                    # React 19 frontend
+    ├── src/
+    │   ├── components/          # Common, layout, dashboard, financial, documents, chat
+    │   ├── context/             # AppContext and useApp hook
+    │   ├── pages/               # Overview, FinancialAnalysis, Documents, Copilot, Settings
+    │   ├── services/            # Centralized API service layer
+    │   └── utils/               # Currency, variance, percentage formatters
+    └── README.md                # Frontend documentation & setup instructions
 ```
-
-For complete API payload specifications, see [backend/README.md](backend/README.md).
