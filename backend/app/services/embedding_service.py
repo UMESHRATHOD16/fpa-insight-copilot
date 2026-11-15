@@ -48,26 +48,36 @@ class EmbeddingService:
     def is_live_provider(self) -> bool:
         return self._client is not None
 
+
     def get_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """Generate embedding vectors for a list of document chunk strings."""
+        """Generate one embedding vector for each document chunk."""
         if not texts:
             return []
 
         if self._client:
             try:
-                # Use official google.genai SDK
-                response = self._client.models.embed_content(
-                    model=self.model,
-                    contents=texts,
-                )
-                if hasattr(response, "embeddings") and response.embeddings:
-                    return [list(emb.values) for emb in response.embeddings]
-            except Exception as exc:
-                # Log or fallback gracefully if live API fails
-                pass
+                vectors = []
 
-        # Offline / deterministic fallback
+                for text in texts:
+                    response = self._client.models.embed_content(
+                        model=self.model,
+                        contents=text,
+                    )
+
+                    if not response.embeddings:
+                        raise ValueError("Embedding API returned an empty response")
+
+                    vectors.append(list(response.embeddings[0].values))
+
+                if len(vectors) == len(texts):
+                    return vectors
+
+            except Exception as exc:
+                print(f"Gemini embedding failed: {exc}")
+                print("Using offline fallback embeddings.")
+
         return [_deterministic_hash_vector(t) for t in texts]
+
 
     def get_query_embedding(self, query: str) -> List[float]:
         """Generate an embedding vector for a single query string."""

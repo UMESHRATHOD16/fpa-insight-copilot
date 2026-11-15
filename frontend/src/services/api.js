@@ -43,6 +43,7 @@ export async function request(endpoint, options = {}) {
     const response = await fetch(url, {
       ...options,
       headers,
+      signal: options.signal,
     })
 
     const contentType = response.headers.get('content-type') || ''
@@ -60,6 +61,9 @@ export async function request(endpoint, options = {}) {
     return data
   } catch (error) {
     if (error instanceof ApiError) {
+      throw error
+    }
+    if (error.name === 'AbortError') {
       throw error
     }
     // Network errors or backend connection failure

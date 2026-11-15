@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # LLM and Vector Store Settings
     GEMINI_API_KEY: Optional[str] = None
     LLM_MODEL: str = "gemini-2.5-flash"
-    EMBEDDING_MODEL: str = "text-embedding-004"
+    EMBEDDING_MODEL: str = "gemini-embedding-2"
     CHROMA_PERSIST_DIRECTORY: str = "./data/chroma"
 
     # File and Ingestion Limits

@@ -6,6 +6,7 @@ import {
   ShieldCheck,
   AlertCircle,
   RefreshCw,
+  Square,
 } from 'lucide-react'
 import { chatService } from '../../services/chatService'
 import { useApp } from '../../context/useApp'
@@ -36,6 +37,7 @@ export function ChatInterface() {
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState(null)
   const messagesEndRef = useRef(null)
+  const abortControllerRef = useRef(null)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -44,6 +46,21 @@ export function ChatInterface() {
   useEffect(() => {
     scrollToBottom()
   }, [messages, loading])
+
+  // Abort ongoing request if component unmounts
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+    }
+  }, [])
+
+  const handleCancel = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+  }
 
   const handleSend = async (questionText = input) => {
     const textToSend = questionText.trim()
@@ -63,11 +80,15 @@ export function ChatInterface() {
     setLoading(true)
     setErrorMessage(null)
 
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     try {
       const response = await chatService.askQuestion({
         question: textToSend,
         document_id: selectedDocId || null,
         top_k: 4,
+        signal: controller.signal,
       })
 
       const assistantMessage = {
@@ -82,16 +103,27 @@ export function ChatInterface() {
 
       setMessages((prev) => [...prev, assistantMessage])
     } catch (err) {
-      setErrorMessage(err.message)
-      const errItem = {
-        id: `assistant-err-${currentCount}`,
-        role: 'assistant',
-        text: `Error: ${err.message}`,
-        isError: true,
+      if (err.name === 'AbortError' || abortControllerRef.current?.signal.aborted) {
+        const cancelledMessage = {
+          id: `assistant-cancelled-${currentCount}`,
+          role: 'assistant',
+          text: 'Response generation was stopped.',
+          isCancelled: true,
+        }
+        setMessages((prev) => [...prev, cancelledMessage])
+      } else {
+        setErrorMessage(err.message)
+        const errItem = {
+          id: `assistant-err-${currentCount}`,
+          role: 'assistant',
+          text: `Error: ${err.message}`,
+          isError: true,
+        }
+        setMessages((prev) => [...prev, errItem])
       }
-      setMessages((prev) => [...prev, errItem])
     } finally {
       setLoading(false)
+      abortControllerRef.current = null
     }
   }
 
@@ -160,6 +192,8 @@ export function ChatInterface() {
                     ? 'bg-blue-600 text-white shadow-xs'
                     : msg.isError
                     ? 'bg-rose-50 border border-rose-200 text-rose-900'
+                    : msg.isCancelled
+                    ? 'bg-amber-50/70 border border-amber-200/80 text-amber-900 italic'
                     : 'bg-white border border-slate-200/90 text-slate-800 shadow-2xs'
                 }`}
               >
@@ -168,7 +202,11 @@ export function ChatInterface() {
                   <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2">
                     <span className="font-semibold text-slate-700">Financial Copilot</span>
                     <div className="flex items-center gap-2">
-                      {msg.hasEvidence ? (
+                      {msg.isCancelled ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                          <Square className="w-2.5 h-2.5 fill-amber-700 text-amber-700" /> Stopped
+                        </span>
+                      ) : msg.hasEvidence ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           <ShieldCheck className="w-3 h-3" /> Grounded Evidence
                         </span>
@@ -213,15 +251,25 @@ export function ChatInterface() {
           )
         })}
 
-        {/* Loading Bubble */}
+        {/* Loading Bubble with Cancel Button */}
         {loading && (
           <div className="flex gap-3 mr-auto max-w-xl">
             <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 border border-blue-200">
               <RefreshCw className="w-4 h-4 animate-spin" />
             </div>
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 text-xs text-slate-500 shadow-2xs flex items-center gap-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-              Searching vector store and synthesizing grounded response...
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 text-xs text-slate-500 shadow-2xs flex items-center justify-between gap-4 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                <span>Searching vector store and synthesizing grounded response...</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-medium text-[11px] transition-colors shrink-0"
+              >
+                <Square className="w-3 h-3 fill-rose-600 text-rose-600" />
+                Stop
+              </button>
             </div>
           </div>
         )}
@@ -265,13 +313,25 @@ export function ChatInterface() {
             rows={1}
             className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none"
           />
-          <button
-            onClick={() => handleSend()}
-            disabled={!input.trim() || loading}
-            className="absolute right-2.5 p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors"
-          >
-            <Send className="w-3.5 h-3.5" />
-          </button>
+          {loading ? (
+            <button
+              type="button"
+              onClick={handleCancel}
+              title="Stop generating"
+              className="absolute right-2.5 p-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition-colors"
+            >
+              <Square className="w-3.5 h-3.5 fill-white text-white" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => handleSend()}
+              disabled={!input.trim()}
+              className="absolute right-2.5 p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors"
+            >
+              <Send className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
         <p className="mt-1.5 text-[10px] text-slate-400 text-center">
           Responses are strictly grounded in indexed PDF excerpts. No unverified financial figures will be hallucinated.

@@ -18,12 +18,37 @@ class RetrievalService:
         Path(self.persist_dir).mkdir(parents=True, exist_ok=True)
 
         self._client = chromadb.PersistentClient(path=self.persist_dir)
-        self._collection = self._client.get_or_create_collection(
-            name=CHROMA_COLLECTION_NAME,
-            metadata={"description": "FP&A Financial Document Chunks"},
-        )
+        self._collection = None
         self._registry_path = Path(self.persist_dir) / "document_registry.json"
         self._registry: Dict[str, dict] = self._load_registry()
+
+    def _get_collection(self, force_refresh: bool = False):
+        """
+        Get or dynamically refresh the ChromaDB collection handle.
+        Guards against stale in-memory collection UUIDs if the collection
+        was recreated or modified on disk.
+        """
+        if not force_refresh and self._collection is not None:
+            try:
+                self._collection.count()
+                return self._collection
+            except Exception:
+                self._collection = None
+
+        try:
+            self._collection = self._client.get_or_create_collection(
+                name=CHROMA_COLLECTION_NAME,
+                metadata={"description": "FP&A Financial Document Chunks"},
+            )
+            return self._collection
+        except Exception:
+            # Reconnect client in case underlying connection/file handle was invalidated
+            self._client = chromadb.PersistentClient(path=self.persist_dir)
+            self._collection = self._client.get_or_create_collection(
+                name=CHROMA_COLLECTION_NAME,
+                metadata={"description": "FP&A Financial Document Chunks"},
+            )
+            return self._collection
 
     def _load_registry(self) -> Dict[str, dict]:
         if self._registry_path.exists():
@@ -60,12 +85,26 @@ class RetrievalService:
             for c in chunks
         ]
 
-        self._collection.upsert(
-            ids=ids,
-            documents=texts,
-            embeddings=embeddings,
-            metadatas=metadatas,
-        )
+        try:
+            collection = self._get_collection()
+            collection.upsert(
+                ids=ids,
+                documents=texts,
+                embeddings=embeddings,
+                metadatas=metadatas,
+            )
+        except Exception as exc:
+            # If collection handle is stale or UUID does not exist, force refresh and retry
+            if "does not exist" in str(exc).lower() or "not found" in str(exc).lower():
+                collection = self._get_collection(force_refresh=True)
+                collection.upsert(
+                    ids=ids,
+                    documents=texts,
+                    embeddings=embeddings,
+                    metadatas=metadatas,
+                )
+            else:
+                raise
 
         # Update registry
         self._registry[summary.document_id] = summary.model_dump()
@@ -73,12 +112,14 @@ class RetrievalService:
 
     def list_documents(self) -> List[DocumentSummary]:
         """Return all indexed documents sorted by upload time descending."""
+        self._registry = self._load_registry()
         docs = [DocumentSummary(**data) for data in self._registry.values()]
         docs.sort(key=lambda d: d.upload_time, reverse=True)
         return docs
 
     def get_document(self, document_id: str) -> Optional[DocumentSummary]:
         """Get summary for a single document."""
+        self._registry = self._load_registry()
         data = self._registry.get(document_id)
         if data:
             return DocumentSummary(**data)
@@ -86,10 +127,22 @@ class RetrievalService:
 
     def get_document_chunks(self, document_id: str) -> List[DocumentChunk]:
         """Retrieve all stored chunks for a specific document."""
-        results = self._collection.get(
-            where={"document_id": document_id},
-            include=["documents", "metadatas"],
-        )
+        try:
+            collection = self._get_collection()
+            results = collection.get(
+                where={"document_id": document_id},
+                include=["documents", "metadatas"],
+            )
+        except Exception as exc:
+            if "does not exist" in str(exc).lower() or "not found" in str(exc).lower():
+                collection = self._get_collection(force_refresh=True)
+                results = collection.get(
+                    where={"document_id": document_id},
+                    include=["documents", "metadatas"],
+                )
+            else:
+                raise
+
         chunks: List[DocumentChunk] = []
         if results and "ids" in results and results["ids"]:
             for i, chunk_id in enumerate(results["ids"]):
@@ -111,15 +164,25 @@ class RetrievalService:
 
     def delete_document(self, document_id: str) -> bool:
         """Delete all chunks and metadata for a document."""
+        self._registry = self._load_registry()
         if document_id not in self._registry:
             return False
 
         try:
-            self._collection.delete(where={"document_id": document_id})
-        except Exception:
-            pass
+            collection = self._get_collection()
+            collection.delete(where={"document_id": document_id})
+        except Exception as exc:
+            if "does not exist" in str(exc).lower() or "not found" in str(exc).lower():
+                try:
+                    collection = self._get_collection(force_refresh=True)
+                    collection.delete(where={"document_id": document_id})
+                except Exception:
+                    pass
+            else:
+                pass
 
-        del self._registry[document_id]
+        if document_id in self._registry:
+            del self._registry[document_id]
         self._save_registry()
         return True
 
@@ -132,7 +195,16 @@ class RetrievalService:
         """
         Query vector collection for relevant chunks given a user query.
         """
-        total_count = self._collection.count()
+        collection = self._get_collection()
+        try:
+            total_count = collection.count()
+        except Exception as exc:
+            if "does not exist" in str(exc).lower() or "not found" in str(exc).lower():
+                collection = self._get_collection(force_refresh=True)
+                total_count = collection.count()
+            else:
+                return []
+
         if total_count == 0:
             return []
 
@@ -144,14 +216,26 @@ class RetrievalService:
             return []
 
         try:
-            results = self._collection.query(
+            results = collection.query(
                 query_embeddings=[query_emb],
                 n_results=actual_k,
                 where=where_filter,
                 include=["documents", "metadatas", "distances"],
             )
-        except Exception:
-            return []
+        except Exception as exc:
+            if "does not exist" in str(exc).lower() or "not found" in str(exc).lower():
+                collection = self._get_collection(force_refresh=True)
+                try:
+                    results = collection.query(
+                        query_embeddings=[query_emb],
+                        n_results=actual_k,
+                        where=where_filter,
+                        include=["documents", "metadatas", "distances"],
+                    )
+                except Exception:
+                    return []
+            else:
+                return []
 
         retrieved: List[RetrievedChunk] = []
         if not results or not results["ids"] or not results["ids"][0]:
@@ -163,7 +247,6 @@ class RetrievalService:
         distances = results.get("distances", [[0.0] * len(ids)])[0]
 
         for i, chunk_id in enumerate(ids):
-            # Chroma default L2 distance: lower distance = higher similarity
             dist = distances[i] if i < len(distances) else 0.0
             similarity = max(0.0, 1.0 - (dist / 2.0))
 
@@ -187,6 +270,7 @@ class RetrievalService:
             self._client.delete_collection(name=CHROMA_COLLECTION_NAME)
         except Exception:
             pass
+        self._collection = None
         self._collection = self._client.get_or_create_collection(
             name=CHROMA_COLLECTION_NAME,
             metadata={"description": "FP&A Financial Document Chunks"},

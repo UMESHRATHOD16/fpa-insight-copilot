@@ -94,20 +94,23 @@ export function CsvUploader() {
         onDragLeave={onDragLeave}
         onDrop={onDrop}
         onClick={() => fileInputRef.current?.click()}
-        className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-          isDragging
+        className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${isDragging
             ? 'border-blue-500 bg-blue-50/50'
             : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/50 bg-slate-50/30'
-        }`}
+          }`}
       >
         <input
           ref={fileInputRef}
           type="file"
           accept=".csv"
           className="hidden"
+          onClick={(e) => e.stopPropagation()}
           onChange={(e) => {
-            if (e.target.files?.[0]) {
-              handleFile(e.target.files[0])
+            const file = e.target.files?.[0]
+            e.target.value = ''
+
+            if (file) {
+              handleFile(file)
             }
           }}
         />

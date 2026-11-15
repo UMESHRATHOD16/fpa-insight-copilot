@@ -6,10 +6,10 @@ import { request } from './api'
 export const chatService = {
   /**
    * Ask an evidence-grounded question using RAG
-   * Payload: { question: string, document_id?: string, top_k?: number }
+   * Payload: { question: string, document_id?: string, top_k?: number, signal?: AbortSignal }
    * Returns: ChatAnswerResponse
    */
-  async askQuestion({ question, document_id = null, top_k = 4 }) {
+  async askQuestion({ question, document_id = null, top_k = 4, signal = null }) {
     const payload = {
       question,
       top_k: Number(top_k) || 4,
@@ -21,6 +21,7 @@ export const chatService = {
     return request('/api/chat/ask', {
       method: 'POST',
       body: JSON.stringify(payload),
+      signal,
     })
   },
 
